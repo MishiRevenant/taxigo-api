@@ -101,6 +101,7 @@ router.post('/', requireRole('passenger'), async (req, res) => {
 
         res.status(201).json({ data: trip })
     } catch (err) {
+        console.error('Error creating trip:', err)
         res.status(500).json({ message: 'Error interno del servidor' })
     }
 })

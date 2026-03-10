@@ -40,8 +40,10 @@ app.use((_req, res) => {
 });
 // ── Error Handler ──────────────────────────────────────────
 app.use(errorHandler);
-app.listen(PORT, () => {
-    console.log(`🚖 TaxiGo API running on http://localhost:${PORT}`);
-    console.log(`   Environment: ${process.env.NODE_ENV || 'development'}`);
-});
+if (!process.env.VERCEL) {
+    app.listen(PORT, () => {
+        console.log(`🚖 TaxiGo API running on http://localhost:${PORT}`);
+        console.log(`   Environment: ${process.env.NODE_ENV || 'development'}`);
+    });
+}
 export default app;
