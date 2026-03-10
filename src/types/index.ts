@@ -43,8 +43,10 @@ export interface AuthTokens {
 }
 
 // Extend Express Request
-declare module 'express' {
-    interface Request {
-        user?: User
+declare global {
+    namespace Express {
+        interface Request {
+            user?: User
+        }
     }
 }

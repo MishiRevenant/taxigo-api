@@ -3,7 +3,7 @@ import { verifyAccessToken } from '../services/jwt.js'
 import { db } from '../db/init.js'
 import type { User } from '../types/index.js'
 
-export function authenticate(req: Request, res: Response, next: NextFunction) {
+export async function authenticate(req: Request, res: Response, next: NextFunction) {
     const authHeader = req.headers.authorization
     if (!authHeader?.startsWith('Bearer ')) {
         res.status(401).json({ message: 'No autorizado' })
@@ -13,7 +13,8 @@ export function authenticate(req: Request, res: Response, next: NextFunction) {
     const token = authHeader.slice(7)
     try {
         const payload = verifyAccessToken(token)
-        const userRow = db.prepare('SELECT * FROM users WHERE id = ?').get(payload.sub) as (User & { password: string }) | undefined
+        const { rows } = await db.query('SELECT * FROM users WHERE id = $1', [payload.sub])
+        const userRow = rows[0]
         if (!userRow) {
             res.status(401).json({ message: 'Usuario no encontrado' })
             return

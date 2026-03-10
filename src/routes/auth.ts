@@ -27,30 +27,34 @@ router.post('/register', async (req, res) => {
 
     const { name, email, password, role, phone } = parsed.data
 
-    const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email)
-    if (existing) {
-        res.status(409).json({ message: 'El email ya está registrado' })
-        return
+    try {
+        const { rows: existingRows } = await db.query('SELECT id FROM users WHERE email = $1', [email])
+        if (existingRows.length > 0) {
+            res.status(409).json({ message: 'El email ya está registrado' })
+            return
+        }
+
+        const hashedPassword = await bcrypt.hash(password, 10)
+        const id = randomUUID()
+        const createdAt = new Date().toISOString()
+
+        await db.query(`
+            INSERT INTO users (id, name, email, password, role, phone, rating, created_at)
+            VALUES ($1, $2, $3, $4, $5, $6, 5.0, current_timestamp)
+        `, [id, name, email, hashedPassword, role, phone || null])
+
+        const user: User = {
+            id, name, email, role,
+            phone: phone || undefined,
+            rating: 5.0,
+            createdAt,
+        }
+
+        const tokens = await generateTokens(user)
+        res.status(201).json({ data: { user, tokens } })
+    } catch (err) {
+        res.status(500).json({ message: 'Error en el servidor' })
     }
-
-    const hashedPassword = await bcrypt.hash(password, 10)
-    const id = randomUUID()
-    const createdAt = new Date().toISOString()
-
-    db.prepare(`
-    INSERT INTO users (id, name, email, password, role, phone, rating, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, 5.0, ?)
-  `).run(id, name, email, hashedPassword, role, phone || null, createdAt)
-
-    const user: User = {
-        id, name, email, role,
-        phone: phone || undefined,
-        rating: 5.0,
-        createdAt,
-    }
-
-    const tokens = generateTokens(user)
-    res.status(201).json({ data: { user, tokens } })
 })
 
 // ── POST /api/auth/login ───────────────────────────────────
@@ -68,39 +72,45 @@ router.post('/login', async (req, res) => {
 
     const { email, password } = parsed.data
 
-    const row = db.prepare('SELECT * FROM users WHERE email = ?').get(email) as (User & { password: string }) | undefined
-    if (!row) {
-        res.status(401).json({ message: 'Credenciales incorrectas' })
-        return
-    }
+    try {
+        const { rows } = await db.query('SELECT * FROM users WHERE email = $1', [email])
+        const row = rows[0] as (User & { password: string; created_at: Date }) | undefined
+        
+        if (!row) {
+            res.status(401).json({ message: 'Credenciales incorrectas' })
+            return
+        }
 
-    const match = await bcrypt.compare(password, row.password)
-    if (!match) {
-        res.status(401).json({ message: 'Credenciales incorrectas' })
-        return
-    }
+        const match = await bcrypt.compare(password, row.password)
+        if (!match) {
+            res.status(401).json({ message: 'Credenciales incorrectas' })
+            return
+        }
 
-    const { password: _pw, ...user } = row
-    // Map snake_case from DB to camelCase
-    const normalizedUser: User = {
-        id: (user as Record<string, unknown>).id as string,
-        name: (user as Record<string, unknown>).name as string,
-        email: (user as Record<string, unknown>).email as string,
-        role: (user as Record<string, unknown>).role as 'passenger' | 'driver',
-        phone: (user as Record<string, unknown>).phone as string | undefined,
-        rating: (user as Record<string, unknown>).rating as number,
-        createdAt: (user as Record<string, unknown>).created_at as string,
-    }
+        const { password: _pw, ...user } = row
+        // Map snake_case from DB to camelCase
+        const normalizedUser: User = {
+            id: (user as Record<string, unknown>).id as string,
+            name: (user as Record<string, unknown>).name as string,
+            email: (user as Record<string, unknown>).email as string,
+            role: (user as Record<string, unknown>).role as 'passenger' | 'driver',
+            phone: (user as Record<string, unknown>).phone as string | undefined,
+            rating: Number((user as Record<string, unknown>).rating),
+            createdAt: (user as Record<string, unknown>).created_at ? new Date((user as Record<string, unknown>).created_at as any).toISOString() : new Date().toISOString(),
+        }
 
-    const tokens = generateTokens(normalizedUser)
-    res.json({ data: { user: normalizedUser, tokens } })
+        const tokens = await generateTokens(normalizedUser)
+        res.json({ data: { user: normalizedUser, tokens } })
+    } catch (err) {
+        res.status(500).json({ message: 'Error en el servidor' })
+    }
 })
 
 // ── POST /api/auth/logout ──────────────────────────────────
-router.post('/logout', authenticate, (req, res) => {
+router.post('/logout', authenticate, async (req, res) => {
     const { refreshToken } = req.body
     if (refreshToken) {
-        try { revokeRefreshToken(refreshToken) } catch { /* ignore */ }
+        try { await revokeRefreshToken(refreshToken) } catch { /* ignore */ }
     }
     res.json({ message: 'Sesión cerrada' })
 })
@@ -111,7 +121,7 @@ router.get('/me', authenticate, (req, res) => {
 })
 
 // ── POST /api/auth/refresh ─────────────────────────────────
-router.post('/refresh', (req, res) => {
+router.post('/refresh', async (req, res) => {
     const { refreshToken } = req.body
     if (!refreshToken) {
         res.status(400).json({ message: 'refreshToken requerido' })
@@ -119,8 +129,9 @@ router.post('/refresh', (req, res) => {
     }
 
     try {
-        const payload = verifyRefreshToken(refreshToken)
-        const row = db.prepare('SELECT * FROM users WHERE id = ?').get(payload.sub) as (User & { password: string; created_at: string }) | undefined
+        const payload = await verifyRefreshToken(refreshToken)
+        const { rows } = await db.query('SELECT * FROM users WHERE id = $1', [payload.sub])
+        const row = rows[0] as (User & { password: string; created_at: Date }) | undefined
         if (!row) {
             res.status(401).json({ message: 'Usuario no encontrado' })
             return
@@ -132,13 +143,13 @@ router.post('/refresh', (req, res) => {
             email: row.email,
             role: row.role,
             phone: row.phone,
-            rating: row.rating,
-            createdAt: row.created_at,
+            rating: Number(row.rating),
+            createdAt: new Date(row.created_at).toISOString(),
         }
 
         // Rotate tokens
-        revokeRefreshToken(refreshToken)
-        const tokens = generateTokens(user)
+        await revokeRefreshToken(refreshToken)
+        const tokens = await generateTokens(user)
         res.json({ data: tokens })
     } catch {
         res.status(401).json({ message: 'Refresh token inválido o expirado' })
