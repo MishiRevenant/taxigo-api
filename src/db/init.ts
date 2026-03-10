@@ -1,12 +1,19 @@
 import Database from 'better-sqlite3'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
+import fs from 'fs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
 const dbPath = process.env.DB_PATH
     ? join(process.cwd(), process.env.DB_PATH)
     : join(__dirname, '../../taxigo.db')
+
+// Ensure directory exists
+const dbDir = dirname(dbPath)
+if (!fs.existsSync(dbDir)) {
+    fs.mkdirSync(dbDir, { recursive: true })
+}
 
 export const db = new Database(dbPath)
 

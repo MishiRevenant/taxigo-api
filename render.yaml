@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: taxigo-api
+    runtime: docker
+    plan: free # Change to 'starter' if using a persistent disk
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 8000
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: DB_PATH
+        value: data/taxigo.db
+      - key: CORS_ORIGIN
+        sync: false # Set this to your frontend URL (e.g., https://taxigo.vercel.app)
+    
+    # Note: Persistent disks require a paid plan (Starter or higher)
+    # If using Free tier, remove the 'disk' section below. 
+    # Data will reset on every restart without a disk.
+    disk:
+      name: taxigo-data
+      mountPath: /app/data
+      sizeGB: 1
