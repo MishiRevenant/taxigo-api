@@ -1,12 +1,19 @@
-import pg from 'pg';
-const { Pool } = pg;
-export const db = new Pool({
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.db = void 0;
+exports.initDb = initDb;
+const pg_1 = __importDefault(require("pg"));
+const { Pool } = pg_1.default;
+exports.db = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: process.env.DATABASE_URL?.includes('localhost') ? undefined : { rejectUnauthorized: false },
 });
-export async function initDb() {
+async function initDb() {
     try {
-        await db.query(`
+        await exports.db.query(`
       CREATE TABLE IF NOT EXISTS users (
         id          VARCHAR(255) PRIMARY KEY,
         name        VARCHAR(255) NOT NULL,

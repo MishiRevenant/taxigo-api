@@ -1,35 +1,50 @@
-import jwt from 'jsonwebtoken';
-import { randomUUID } from 'crypto';
-import { db } from '../db/init.js';
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.generateTokens = generateTokens;
+exports.verifyAccessToken = verifyAccessToken;
+exports.verifyRefreshToken = verifyRefreshToken;
+exports.revokeRefreshToken = revokeRefreshToken;
+const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
+const crypto_1 = require("crypto");
+const database_1 = require("../config/database");
+const RefreshToken_1 = require("../entities/RefreshToken");
 const ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || 'access_secret_dev';
 const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'refresh_secret_dev';
 const ACCESS_EXPIRES = process.env.JWT_ACCESS_EXPIRES || '15m';
 const REFRESH_EXPIRES = process.env.JWT_REFRESH_EXPIRES || '7d';
-export async function generateTokens(user) {
-    const jti = randomUUID();
-    const accessToken = jwt.sign({ sub: user.id, role: user.role, jti }, ACCESS_SECRET, { expiresIn: ACCESS_EXPIRES });
-    const refreshJti = randomUUID();
-    const refreshToken = jwt.sign({ sub: user.id, jti: refreshJti }, REFRESH_SECRET, { expiresIn: REFRESH_EXPIRES });
-    // Persist refresh token
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-    await db.query(`
-        INSERT INTO refresh_tokens (id, user_id, token, expires_at) 
-        VALUES ($1, $2, $3, $4) 
-        ON CONFLICT (token) DO NOTHING
-    `, [refreshJti, user.id, refreshToken, expiresAt]);
+async function generateTokens(user) {
+    const jti = (0, crypto_1.randomUUID)();
+    const accessToken = jsonwebtoken_1.default.sign({ sub: user.id, role: user.role, jti }, ACCESS_SECRET, { expiresIn: ACCESS_EXPIRES });
+    const refreshJti = (0, crypto_1.randomUUID)();
+    const refreshToken = jsonwebtoken_1.default.sign({ sub: user.id, jti: refreshJti }, REFRESH_SECRET, { expiresIn: REFRESH_EXPIRES });
+    const rtRepo = database_1.AppDataSource.getRepository(RefreshToken_1.RefreshToken);
+    const rt = rtRepo.create({
+        id: refreshJti,
+        userId: user.id,
+        token: refreshToken,
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    });
+    await rtRepo.save(rt);
     return { accessToken, refreshToken };
 }
-export function verifyAccessToken(token) {
-    return jwt.verify(token, ACCESS_SECRET);
+function verifyAccessToken(token) {
+    return jsonwebtoken_1.default.verify(token, ACCESS_SECRET);
 }
-export async function verifyRefreshToken(token) {
-    const payload = jwt.verify(token, REFRESH_SECRET);
-    // Check it exists and isn't expired in DB
-    const { rows } = await db.query('SELECT * FROM refresh_tokens WHERE token = $1 AND expires_at > CURRENT_TIMESTAMP', [token]);
-    if (rows.length === 0)
+async function verifyRefreshToken(token) {
+    const payload = jsonwebtoken_1.default.verify(token, REFRESH_SECRET);
+    const rtRepo = database_1.AppDataSource.getRepository(RefreshToken_1.RefreshToken);
+    const rt = await rtRepo.findOne({
+        where: { token },
+    });
+    if (!rt || rt.expiresAt < new Date()) {
         throw new Error('Refresh token invalid or expired');
+    }
     return payload;
 }
-export async function revokeRefreshToken(token) {
-    await db.query('DELETE FROM refresh_tokens WHERE token = $1', [token]);
+async function revokeRefreshToken(token) {
+    const rtRepo = database_1.AppDataSource.getRepository(RefreshToken_1.RefreshToken);
+    await rtRepo.delete({ token });
 }

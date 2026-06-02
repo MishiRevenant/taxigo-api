@@ -2,14 +2,51 @@ import { Router } from 'express'
 import { z } from 'zod'
 import bcrypt from 'bcryptjs'
 import { randomUUID } from 'crypto'
-import { db } from '../db/init.js'
-import { generateTokens, verifyRefreshToken, revokeRefreshToken } from '../services/jwt.js'
-import { authenticate } from '../middleware/auth.js'
-import type { User } from '../types/index.js'
+import { AppDataSource } from '../config/database'
+import { User } from '../entities/User'
+import { generateTokens, verifyRefreshToken, revokeRefreshToken } from '../services/jwt'
+import { authenticate } from '../middleware/auth'
 
 const router = Router()
 
-// ── POST /api/auth/register ────────────────────────────────
+// ── POST /api/auth/register ──────────────────────────────────────────────────
+/**
+ * @openapi
+ * /api/auth/register:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Registrar nuevo usuario
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, email, password, role]
+ *             properties:
+ *               name: { type: string, minLength: 2, example: Carlos Méndez }
+ *               email: { type: string, format: email, example: carlos@ejemplo.com }
+ *               password: { type: string, minLength: 6, example: secreto123 }
+ *               role: { type: string, enum: [passenger, driver] }
+ *               phone: { type: string, example: '+57 300 123 4567' }
+ *     responses:
+ *       201:
+ *         description: Usuario registrado exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     user: { $ref: '#/components/schemas/User' }
+ *                     tokens: { $ref: '#/components/schemas/AuthTokens' }
+ *       409:
+ *         description: El email ya está registrado
+ *       422:
+ *         description: Datos inválidos
+ */
 router.post('/register', async (req, res) => {
     const schema = z.object({
         name: z.string().min(2).max(80),
@@ -26,38 +63,70 @@ router.post('/register', async (req, res) => {
     }
 
     const { name, email, password, role, phone } = parsed.data
+    const userRepo = AppDataSource.getRepository(User)
 
     try {
-        const { rows: existingRows } = await db.query('SELECT id FROM users WHERE email = $1', [email])
-        if (existingRows.length > 0) {
+        const existing = await userRepo.findOne({ where: { email } })
+        if (existing) {
             res.status(409).json({ message: 'El email ya está registrado' })
             return
         }
 
         const hashedPassword = await bcrypt.hash(password, 10)
-        const id = randomUUID()
-        const createdAt = new Date().toISOString()
-
-        await db.query(`
-            INSERT INTO users (id, name, email, password, role, phone, rating, created_at)
-            VALUES ($1, $2, $3, $4, $5, $6, 5.0, current_timestamp)
-        `, [id, name, email, hashedPassword, role, phone || null])
-
-        const user: User = {
-            id, name, email, role,
-            phone: phone || undefined,
+        const user = userRepo.create({
+            id: randomUUID(),
+            name,
+            email,
+            password: hashedPassword,
+            role,
+            phone: phone || null,
             rating: 5.0,
-            createdAt,
-        }
+        })
+
+        await userRepo.save(user)
 
         const tokens = await generateTokens(user)
-        res.status(201).json({ data: { user, tokens } })
+        const { password: _pw, ...safeUser } = user as User & { password: string }
+
+        res.status(201).json({ data: { user: safeUser, tokens } })
     } catch (err) {
         res.status(500).json({ message: 'Error en el servidor' })
     }
 })
 
-// ── POST /api/auth/login ───────────────────────────────────
+// ── POST /api/auth/login ─────────────────────────────────────────────────────
+/**
+ * @openapi
+ * /api/auth/login:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Iniciar sesión
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, password]
+ *             properties:
+ *               email: { type: string, format: email, example: passenger@taxigo.com }
+ *               password: { type: string, example: password }
+ *     responses:
+ *       200:
+ *         description: Login exitoso
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     user: { $ref: '#/components/schemas/User' }
+ *                     tokens: { $ref: '#/components/schemas/AuthTokens' }
+ *       401:
+ *         description: Credenciales incorrectas
+ */
 router.post('/login', async (req, res) => {
     const schema = z.object({
         email: z.string().email(),
@@ -71,42 +140,83 @@ router.post('/login', async (req, res) => {
     }
 
     const { email, password } = parsed.data
+    const userRepo = AppDataSource.getRepository(User)
 
     try {
-        const { rows } = await db.query('SELECT * FROM users WHERE email = $1', [email])
-        const row = rows[0] as (User & { password: string; created_at: Date }) | undefined
-        
-        if (!row) {
+        const user = await userRepo
+            .createQueryBuilder('user')
+            .addSelect('user.password')
+            .where('user.email = :email', { email })
+            .getOne()
+
+        if (!user) {
             res.status(401).json({ message: 'Credenciales incorrectas' })
             return
         }
 
-        const match = await bcrypt.compare(password, row.password)
+        const match = await bcrypt.compare(password, user.password)
         if (!match) {
             res.status(401).json({ message: 'Credenciales incorrectas' })
             return
         }
 
-        const { password: _pw, ...user } = row
-        // Map snake_case from DB to camelCase
-        const normalizedUser: User = {
-            id: (user as Record<string, unknown>).id as string,
-            name: (user as Record<string, unknown>).name as string,
-            email: (user as Record<string, unknown>).email as string,
-            role: (user as Record<string, unknown>).role as 'passenger' | 'driver',
-            phone: (user as Record<string, unknown>).phone as string | undefined,
-            rating: Number((user as Record<string, unknown>).rating),
-            createdAt: (user as Record<string, unknown>).created_at ? new Date((user as Record<string, unknown>).created_at as any).toISOString() : new Date().toISOString(),
-        }
+        const tokens = await generateTokens(user)
+        const { password: _pw, ...safeUser } = user as User & { password: string }
 
-        const tokens = await generateTokens(normalizedUser)
-        res.json({ data: { user: normalizedUser, tokens } })
+        res.json({ data: { user: safeUser, tokens } })
     } catch (err) {
         res.status(500).json({ message: 'Error en el servidor' })
     }
 })
 
-// ── POST /api/auth/logout ──────────────────────────────────
+// ── GET /api/auth/me ─────────────────────────────────────────────────────────
+/**
+ * @openapi
+ * /api/auth/me:
+ *   get:
+ *     tags: [Auth]
+ *     summary: Obtener perfil del usuario autenticado
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Perfil del usuario
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     user: { $ref: '#/components/schemas/User' }
+ *       401:
+ *         description: No autorizado
+ */
+router.get('/me', authenticate, (req, res) => {
+    res.json({ data: { user: req.user } })
+})
+
+// ── POST /api/auth/logout ────────────────────────────────────────────────────
+/**
+ * @openapi
+ * /api/auth/logout:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Cerrar sesión (revocar refresh token)
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               refreshToken: { type: string }
+ *     responses:
+ *       200:
+ *         description: Sesión cerrada
+ */
 router.post('/logout', authenticate, async (req, res) => {
     const { refreshToken } = req.body
     if (refreshToken) {
@@ -115,12 +225,34 @@ router.post('/logout', authenticate, async (req, res) => {
     res.json({ message: 'Sesión cerrada' })
 })
 
-// ── GET /api/auth/me ───────────────────────────────────────
-router.get('/me', authenticate, (req, res) => {
-    res.json({ data: { user: req.user } })
-})
-
-// ── POST /api/auth/refresh ─────────────────────────────────
+// ── POST /api/auth/refresh ───────────────────────────────────────────────────
+/**
+ * @openapi
+ * /api/auth/refresh:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Renovar access token usando refresh token
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [refreshToken]
+ *             properties:
+ *               refreshToken: { type: string }
+ *     responses:
+ *       200:
+ *         description: Nuevos tokens generados
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data: { $ref: '#/components/schemas/AuthTokens' }
+ *       401:
+ *         description: Refresh token inválido o expirado
+ */
 router.post('/refresh', async (req, res) => {
     const { refreshToken } = req.body
     if (!refreshToken) {
@@ -130,24 +262,13 @@ router.post('/refresh', async (req, res) => {
 
     try {
         const payload = await verifyRefreshToken(refreshToken)
-        const { rows } = await db.query('SELECT * FROM users WHERE id = $1', [payload.sub])
-        const row = rows[0] as (User & { password: string; created_at: Date }) | undefined
-        if (!row) {
+        const userRepo = AppDataSource.getRepository(User)
+        const user = await userRepo.findOne({ where: { id: payload.sub } })
+        if (!user) {
             res.status(401).json({ message: 'Usuario no encontrado' })
             return
         }
 
-        const user: User = {
-            id: row.id,
-            name: row.name,
-            email: row.email,
-            role: row.role,
-            phone: row.phone,
-            rating: Number(row.rating),
-            createdAt: new Date(row.created_at).toISOString(),
-        }
-
-        // Rotate tokens
         await revokeRefreshToken(refreshToken)
         const tokens = await generateTokens(user)
         res.json({ data: tokens })

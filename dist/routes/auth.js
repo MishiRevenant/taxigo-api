@@ -1,19 +1,62 @@
-import { Router } from 'express';
-import { z } from 'zod';
-import bcrypt from 'bcryptjs';
-import { randomUUID } from 'crypto';
-import { db } from '../db/init.js';
-import { generateTokens, verifyRefreshToken, revokeRefreshToken } from '../services/jwt.js';
-import { authenticate } from '../middleware/auth.js';
-const router = Router();
-// ── POST /api/auth/register ────────────────────────────────
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const zod_1 = require("zod");
+const bcryptjs_1 = __importDefault(require("bcryptjs"));
+const crypto_1 = require("crypto");
+const database_1 = require("../config/database");
+const User_1 = require("../entities/User");
+const jwt_1 = require("../services/jwt");
+const auth_1 = require("../middleware/auth");
+const router = (0, express_1.Router)();
+// ── POST /api/auth/register ──────────────────────────────────────────────────
+/**
+ * @openapi
+ * /api/auth/register:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Registrar nuevo usuario
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, email, password, role]
+ *             properties:
+ *               name: { type: string, minLength: 2, example: Carlos Méndez }
+ *               email: { type: string, format: email, example: carlos@ejemplo.com }
+ *               password: { type: string, minLength: 6, example: secreto123 }
+ *               role: { type: string, enum: [passenger, driver] }
+ *               phone: { type: string, example: '+57 300 123 4567' }
+ *     responses:
+ *       201:
+ *         description: Usuario registrado exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     user: { $ref: '#/components/schemas/User' }
+ *                     tokens: { $ref: '#/components/schemas/AuthTokens' }
+ *       409:
+ *         description: El email ya está registrado
+ *       422:
+ *         description: Datos inválidos
+ */
 router.post('/register', async (req, res) => {
-    const schema = z.object({
-        name: z.string().min(2).max(80),
-        email: z.string().email(),
-        password: z.string().min(6),
-        role: z.enum(['passenger', 'driver']),
-        phone: z.string().optional(),
+    const schema = zod_1.z.object({
+        name: zod_1.z.string().min(2).max(80),
+        email: zod_1.z.string().email(),
+        password: zod_1.z.string().min(6),
+        role: zod_1.z.enum(['passenger', 'driver']),
+        phone: zod_1.z.string().optional(),
     });
     const parsed = schema.safeParse(req.body);
     if (!parsed.success) {
@@ -21,37 +64,69 @@ router.post('/register', async (req, res) => {
         return;
     }
     const { name, email, password, role, phone } = parsed.data;
+    const userRepo = database_1.AppDataSource.getRepository(User_1.User);
     try {
-        const { rows: existingRows } = await db.query('SELECT id FROM users WHERE email = $1', [email]);
-        if (existingRows.length > 0) {
+        const existing = await userRepo.findOne({ where: { email } });
+        if (existing) {
             res.status(409).json({ message: 'El email ya está registrado' });
             return;
         }
-        const hashedPassword = await bcrypt.hash(password, 10);
-        const id = randomUUID();
-        const createdAt = new Date().toISOString();
-        await db.query(`
-            INSERT INTO users (id, name, email, password, role, phone, rating, created_at)
-            VALUES ($1, $2, $3, $4, $5, $6, 5.0, current_timestamp)
-        `, [id, name, email, hashedPassword, role, phone || null]);
-        const user = {
-            id, name, email, role,
-            phone: phone || undefined,
+        const hashedPassword = await bcryptjs_1.default.hash(password, 10);
+        const user = userRepo.create({
+            id: (0, crypto_1.randomUUID)(),
+            name,
+            email,
+            password: hashedPassword,
+            role,
+            phone: phone || null,
             rating: 5.0,
-            createdAt,
-        };
-        const tokens = await generateTokens(user);
-        res.status(201).json({ data: { user, tokens } });
+        });
+        await userRepo.save(user);
+        const tokens = await (0, jwt_1.generateTokens)(user);
+        const { password: _pw, ...safeUser } = user;
+        res.status(201).json({ data: { user: safeUser, tokens } });
     }
     catch (err) {
         res.status(500).json({ message: 'Error en el servidor' });
     }
 });
-// ── POST /api/auth/login ───────────────────────────────────
+// ── POST /api/auth/login ─────────────────────────────────────────────────────
+/**
+ * @openapi
+ * /api/auth/login:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Iniciar sesión
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, password]
+ *             properties:
+ *               email: { type: string, format: email, example: passenger@taxigo.com }
+ *               password: { type: string, example: password }
+ *     responses:
+ *       200:
+ *         description: Login exitoso
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     user: { $ref: '#/components/schemas/User' }
+ *                     tokens: { $ref: '#/components/schemas/AuthTokens' }
+ *       401:
+ *         description: Credenciales incorrectas
+ */
 router.post('/login', async (req, res) => {
-    const schema = z.object({
-        email: z.string().email(),
-        password: z.string().min(1),
+    const schema = zod_1.z.object({
+        email: zod_1.z.string().email(),
+        password: zod_1.z.string().min(1),
     });
     const parsed = schema.safeParse(req.body);
     if (!parsed.success) {
@@ -59,52 +134,115 @@ router.post('/login', async (req, res) => {
         return;
     }
     const { email, password } = parsed.data;
+    const userRepo = database_1.AppDataSource.getRepository(User_1.User);
     try {
-        const { rows } = await db.query('SELECT * FROM users WHERE email = $1', [email]);
-        const row = rows[0];
-        if (!row) {
+        const user = await userRepo
+            .createQueryBuilder('user')
+            .addSelect('user.password')
+            .where('user.email = :email', { email })
+            .getOne();
+        if (!user) {
             res.status(401).json({ message: 'Credenciales incorrectas' });
             return;
         }
-        const match = await bcrypt.compare(password, row.password);
+        const match = await bcryptjs_1.default.compare(password, user.password);
         if (!match) {
             res.status(401).json({ message: 'Credenciales incorrectas' });
             return;
         }
-        const { password: _pw, ...user } = row;
-        // Map snake_case from DB to camelCase
-        const normalizedUser = {
-            id: user.id,
-            name: user.name,
-            email: user.email,
-            role: user.role,
-            phone: user.phone,
-            rating: Number(user.rating),
-            createdAt: user.created_at ? new Date(user.created_at).toISOString() : new Date().toISOString(),
-        };
-        const tokens = await generateTokens(normalizedUser);
-        res.json({ data: { user: normalizedUser, tokens } });
+        const tokens = await (0, jwt_1.generateTokens)(user);
+        const { password: _pw, ...safeUser } = user;
+        res.json({ data: { user: safeUser, tokens } });
     }
     catch (err) {
         res.status(500).json({ message: 'Error en el servidor' });
     }
 });
-// ── POST /api/auth/logout ──────────────────────────────────
-router.post('/logout', authenticate, async (req, res) => {
+// ── GET /api/auth/me ─────────────────────────────────────────────────────────
+/**
+ * @openapi
+ * /api/auth/me:
+ *   get:
+ *     tags: [Auth]
+ *     summary: Obtener perfil del usuario autenticado
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Perfil del usuario
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     user: { $ref: '#/components/schemas/User' }
+ *       401:
+ *         description: No autorizado
+ */
+router.get('/me', auth_1.authenticate, (req, res) => {
+    res.json({ data: { user: req.user } });
+});
+// ── POST /api/auth/logout ────────────────────────────────────────────────────
+/**
+ * @openapi
+ * /api/auth/logout:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Cerrar sesión (revocar refresh token)
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               refreshToken: { type: string }
+ *     responses:
+ *       200:
+ *         description: Sesión cerrada
+ */
+router.post('/logout', auth_1.authenticate, async (req, res) => {
     const { refreshToken } = req.body;
     if (refreshToken) {
         try {
-            await revokeRefreshToken(refreshToken);
+            await (0, jwt_1.revokeRefreshToken)(refreshToken);
         }
         catch { /* ignore */ }
     }
     res.json({ message: 'Sesión cerrada' });
 });
-// ── GET /api/auth/me ───────────────────────────────────────
-router.get('/me', authenticate, (req, res) => {
-    res.json({ data: { user: req.user } });
-});
-// ── POST /api/auth/refresh ─────────────────────────────────
+// ── POST /api/auth/refresh ───────────────────────────────────────────────────
+/**
+ * @openapi
+ * /api/auth/refresh:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Renovar access token usando refresh token
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [refreshToken]
+ *             properties:
+ *               refreshToken: { type: string }
+ *     responses:
+ *       200:
+ *         description: Nuevos tokens generados
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data: { $ref: '#/components/schemas/AuthTokens' }
+ *       401:
+ *         description: Refresh token inválido o expirado
+ */
 router.post('/refresh', async (req, res) => {
     const { refreshToken } = req.body;
     if (!refreshToken) {
@@ -112,29 +250,19 @@ router.post('/refresh', async (req, res) => {
         return;
     }
     try {
-        const payload = await verifyRefreshToken(refreshToken);
-        const { rows } = await db.query('SELECT * FROM users WHERE id = $1', [payload.sub]);
-        const row = rows[0];
-        if (!row) {
+        const payload = await (0, jwt_1.verifyRefreshToken)(refreshToken);
+        const userRepo = database_1.AppDataSource.getRepository(User_1.User);
+        const user = await userRepo.findOne({ where: { id: payload.sub } });
+        if (!user) {
             res.status(401).json({ message: 'Usuario no encontrado' });
             return;
         }
-        const user = {
-            id: row.id,
-            name: row.name,
-            email: row.email,
-            role: row.role,
-            phone: row.phone,
-            rating: Number(row.rating),
-            createdAt: new Date(row.created_at).toISOString(),
-        };
-        // Rotate tokens
-        await revokeRefreshToken(refreshToken);
-        const tokens = await generateTokens(user);
+        await (0, jwt_1.revokeRefreshToken)(refreshToken);
+        const tokens = await (0, jwt_1.generateTokens)(user);
         res.json({ data: tokens });
     }
     catch {
         res.status(401).json({ message: 'Refresh token inválido o expirado' });
     }
 });
-export default router;
+exports.default = router;

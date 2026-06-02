@@ -1,42 +1,66 @@
-# 🚖 TaxiGo API
+# 🚖 TaxiGo API v2
 
-> Backend REST para la plataforma TaxiGo construido con **Express + TypeScript + SQLite (better-sqlite3)**  
-> JWT con rotación de refresh tokens, CORS configurable y sin dependencias de base de datos externa.
+> Backend REST + WebSockets para la plataforma TaxiGo.  
+> **Express + TypeScript + TypeORM + PostgreSQL (Supabase) + Socket.IO + JWT + Swagger**
 
 ---
 
-## 🛠 Tecnologías
+## 🛠 Stack Tecnológico
 
-| Herramienta | Versión | Uso |
+| Herramienta | Versión | Rol |
 |---|---|---|
-| [Express](https://expressjs.com) | ^4.18 | Framework HTTP |
+| [Express](https://expressjs.com) | ^4.19 | Framework HTTP |
 | [TypeScript](https://typescriptlang.org) | ^5.4 | Tipado estático |
-| [better-sqlite3](https://github.com/WiseLibs/better-sqlite3) | ^9 | Base de datos SQLite embebida |
+| [TypeORM](https://typeorm.io) | ^0.3 | ORM (entidades, relaciones, migraciones) |
+| [PostgreSQL](https://postgresql.org) | 16 | Base de datos relacional |
+| [Socket.IO](https://socket.io) | ^4.7 | WebSockets tiempo real |
 | [jsonwebtoken](https://github.com/auth0/node-jsonwebtoken) | ^9 | JWT access + refresh tokens |
 | [bcryptjs](https://github.com/dcodeIO/bcrypt.js) | ^2.4 | Hashing de contraseñas |
 | [Zod](https://zod.dev) | ^3 | Validación de cuerpos de request |
-| [cors](https://github.com/expressjs/cors) | ^2 | Control de CORS |
-| [helmet](https://helmetjs.github.io) | ^7 | Headers de seguridad |
-| [morgan](https://github.com/expressjs/morgan) | ^1 | Logging de requests |
+| [Swagger/OpenAPI](https://swagger.io) | ^3 | Documentación interactiva |
+| [Winston](https://github.com/winstonjs/winston) | ^3 | Logging estructurado |
+| [Helmet](https://helmetjs.github.io) | ^7 | Cabeceras de seguridad HTTP |
+| [express-rate-limit](https://github.com/express-rate-limit/express-rate-limit) | ^7 | Rate limiting |
 
 ---
 
-## 🚀 Inicio Rápido
+## 🚀 Inicio Rápido (Local)
 
 ```bash
 cd taxigo-api
 npm install
-cp .env.example .env   # (o editar el .env existente)
-npm run dev
-# → http://localhost:8000
+cp .env.example .env   # editar con tu DATABASE_URL
+npm run migration:run  # aplica el schema a la DB
+npm run seed           # datos de prueba
+npm run dev            # servidor en modo watch → http://localhost:8000
 ```
 
-Verificar que el servidor corre:
+### Verificar funcionamiento
 
 ```bash
 curl http://localhost:8000/health
-# {"status":"ok","timestamp":"..."}
+# → {"status":"ok","timestamp":"...","db":"connected"}
 ```
+
+📚 **Swagger UI**: http://localhost:8000/api/docs
+
+---
+
+## 🐳 Docker Compose (API + PostgreSQL local)
+
+```bash
+# Levantar todo con un comando:
+docker compose up -d
+
+# Ver logs
+docker compose logs -f api
+
+# Parar
+docker compose down
+```
+
+> Esto levanta PostgreSQL 16 + TaxiGo API en el puerto 8000.  
+> Las migraciones se corren automáticamente al iniciar el servidor.
 
 ---
 
@@ -45,17 +69,18 @@ curl http://localhost:8000/health
 | Variable | Por defecto | Descripción |
 |---|---|---|
 | `PORT` | `8000` | Puerto HTTP |
-| `JWT_ACCESS_SECRET` | `access_secret_dev` | Secret para access tokens (cambiar en prod) |
-| `JWT_REFRESH_SECRET` | `refresh_secret_dev` | Secret para refresh tokens (cambiar en prod) |
+| `DATABASE_URL` | — | URL de conexión PostgreSQL (Supabase o local) |
+| `JWT_ACCESS_SECRET` | `access_secret_dev` | Secret para access tokens |
+| `JWT_REFRESH_SECRET` | `refresh_secret_dev` | Secret para refresh tokens |
 | `JWT_ACCESS_EXPIRES` | `15m` | Duración del access token |
 | `JWT_REFRESH_EXPIRES` | `7d` | Duración del refresh token |
-| `DB_PATH` | `./taxigo.db` | Ruta al archivo SQLite |
-| `CORS_ORIGIN` | `http://localhost:5173` | Orígenes permitidos (separados por coma) |
-| `NODE_ENV` | `development` | Entorno (`development`/`production`) |
+| `CORS_ORIGIN` | `http://localhost:5173` | Origen(es) permitidos (separados por coma) |
+| `API_URL` | `http://localhost:8000` | URL del servidor para Swagger |
+| `NODE_ENV` | `development` | Entorno |
 
 ---
 
-## 👤 Usuarios de Prueba (pre-seeded)
+## 👤 Credenciales de Prueba
 
 | Rol | Email | Contraseña |
 |---|---|---|
@@ -64,312 +89,109 @@ curl http://localhost:8000/health
 
 ---
 
-## 📡 Referencia de la API
+## 📡 Endpoints
 
-### Base URL
-
-```
-http://localhost:8000/api
-```
+### Base URL: `http://localhost:8000/api`
 
 Todos los endpoints protegidos requieren:
 ```
 Authorization: Bearer <accessToken>
 ```
 
----
+### 🔐 Auth (`/api/auth`)
 
-### 🔐 Auth — `/api/auth`
+| Método | Ruta | Auth | Descripción |
+|---|---|---|---|
+| POST | `/auth/register` | ❌ | Registrar usuario |
+| POST | `/auth/login` | ❌ | Login → tokens JWT |
+| GET | `/auth/me` | ✅ | Perfil del usuario |
+| POST | `/auth/logout` | ✅ | Revocar refresh token |
+| POST | `/auth/refresh` | ❌ | Rotar tokens |
 
-#### `POST /api/auth/register`
+### 🚗 Trips (`/api/trips`)
 
-Registra un nuevo usuario.
+| Método | Ruta | Rol | Descripción |
+|---|---|---|---|
+| POST | `/trips` | passenger | Solicitar viaje |
+| GET | `/trips/available` | driver | Viajes disponibles |
+| GET | `/trips/active` | ambos | Mi viaje activo |
+| GET | `/trips/history` | ambos | Historial |
+| POST | `/trips/:id/accept` | driver | Aceptar viaje |
+| POST | `/trips/:id/start` | driver | Iniciar viaje |
+| POST | `/trips/:id/complete` | driver | Finalizar viaje |
+| POST | `/trips/:id/cancel` | ambos | Cancelar viaje |
+| PATCH | `/trips/:id/status` | ambos | Cambiar estado (genérico) |
+| GET | `/trips/:id` | ambos | Detalle de viaje |
 
-**Body:**
-```json
-{
-  "name": "María García",
-  "email": "maria@ejemplo.com",
-  "password": "secreto123",
-  "role": "passenger",
-  "phone": "+34 600 000 000"
-}
-```
+### 📍 Alias Académicos
 
-**Respuesta 201:**
-```json
-{
-  "data": {
-    "user": { "id": "...", "name": "María García", "email": "...", "role": "passenger", "rating": 5.0, "createdAt": "..." },
-    "tokens": { "accessToken": "eyJ...", "refreshToken": "eyJ..." }
-  }
-}
-```
-
-**Errores:**
-- `422` — datos de entrada inválidos
-- `409` — el email ya está registrado
-
----
-
-#### `POST /api/auth/login`
-
-Inicia sesión con email y contraseña.
-
-**Body:**
-```json
-{ "email": "passenger@taxigo.com", "password": "password" }
-```
-
-**Respuesta 200:** igual que register (`data.user` + `data.tokens`).
-
-**Errores:**
-- `401` — credenciales incorrectas
+| Método | Ruta | Equivalente |
+|---|---|---|
+| POST | `/travels/request` | POST `/trips` |
+| POST | `/travels/:id/accept` | POST `/trips/:id/accept` |
+| POST | `/travels/:id/start` | POST `/trips/:id/start` |
+| POST | `/travels/:id/complete` | POST `/trips/:id/complete` |
+| POST | `/travels/:id/cancel` | POST `/trips/:id/cancel` |
+| GET | `/me/travels` | GET `/trips/history` |
 
 ---
 
-#### `GET /api/auth/me` 🔒
+## 🔌 WebSocket Events
 
-Devuelve el perfil del usuario autenticado.
+Conectar al servidor: `ws://localhost:8000`
 
-**Respuesta 200:**
-```json
-{ "data": { "user": { "id": "...", "name": "...", "role": "...", ... } } }
-```
+### Emitir desde el cliente:
 
----
+| Evento | Payload | Descripción |
+|---|---|---|
+| `join` | `userId: string` | Unirse a sala personal |
+| `join:drivers` | — | Conductor se suscribe a nuevos viajes |
 
-#### `POST /api/auth/logout` 🔒
+### Recibir desde el servidor:
 
-Revoca el refresh token.
-
-**Body:**
-```json
-{ "refreshToken": "eyJ..." }
-```
-
-**Respuesta 200:**
-```json
-{ "message": "Sesión cerrada" }
-```
+| Evento | Destinatario | Descripción |
+|---|---|---|
+| `trip:requested` | Sala `drivers` | Nuevo viaje disponible |
+| `trip:accepted` | Pasajero | Su viaje fue aceptado |
+| `trip:started` | Ambos | Conductor inició el viaje |
+| `trip:completed` | Ambos | Viaje finalizado |
+| `trip:cancelled` | Ambos | Viaje cancelado |
 
 ---
 
-#### `POST /api/auth/refresh`
+## 🗃 Schema de Base de Datos
 
-Renueva el access token usando el refresh token (rotación: el refresh token viejo queda invalidado).
+### TypeORM Entities → PostgreSQL Tables
 
-**Body:**
-```json
-{ "refreshToken": "eyJ..." }
+```
+src/entities/
+├── User.ts          → tabla users
+├── Trip.ts          → tabla trips
+└── RefreshToken.ts  → tabla refresh_tokens
 ```
 
-**Respuesta 200:**
-```json
-{ "data": { "accessToken": "eyJ...", "refreshToken": "eyJ..." } }
-```
-
-**Errores:**
-- `401` — refresh token inválido o expirado
-
----
-
-### 🚗 Trips — `/api/trips`
-
-Todos los endpoints de viajes requieren autenticación (`Authorization: Bearer <token>`).
-
-#### `POST /api/trips` 🔒 (solo pasajero)
-
-Crea una nueva solicitud de viaje.
-
-**Body:**
-```json
-{
-  "originAddress": "Calle 72 #10-07, Bogotá",
-  "destinationAddress": "Aeropuerto El Dorado",
-  "vehicleType": "standard",
-  "notes": "Equipaje de bodega"
-}
-```
-
-> `vehicleType`: `"standard"` | `"comfort"` | `"xl"`
-
-**Respuesta 201:**
-```json
-{
-  "data": {
-    "id": "uuid",
-    "passengerId": "...",
-    "originAddress": "Calle 72 #10-07, Bogotá",
-    "originLat": 4.6097,
-    "originLng": -74.0817,
-    "destinationAddress": "Aeropuerto El Dorado",
-    "destinationLat": 4.701,
-    "destinationLng": -74.146,
-    "status": "requested",
-    "vehicleType": "standard",
-    "requestedAt": "2024-03-04T10:00:00.000Z"
-  }
-}
-```
-
-**Errores:**
-- `409` — el pasajero ya tiene un viaje activo
-- `422` — datos inválidos
-
----
-
-#### `GET /api/trips/active` 🔒
-
-Devuelve el viaje activo del usuario autenticado (cualquier rol). Estado `requested`, `accepted` o `on_ride`.
-
-**Respuesta 200:**
-```json
-{ "data": { ...trip, "passenger": {...user}, "driver": {...user} } }
-```
-
-**Errores:**
-- `404` — sin viaje activo
-
----
-
-#### `GET /api/trips/available` 🔒 (solo conductor)
-
-Lista todos los viajes con estado `requested` (disponibles para aceptar).
-
-**Respuesta 200:**
-```json
-{ "data": [ {...trip}, {...trip} ] }
-```
-
----
-
-#### `GET /api/trips/history` 🔒
-
-Historial de viajes del usuario (completados o cancelados).
-
-**Respuesta 200:**
-```json
-{ "data": [ {...trip}, ... ] }
-```
-
----
-
-#### `GET /api/trips/:id` 🔒
-
-Devuelve un viaje específico por ID.
-
-**Respuesta 200:**
-```json
-{ "data": { ...trip } }
-```
-
----
-
-#### `POST /api/trips/:id/accept` 🔒 (solo conductor)
-
-El conductor acepta un viaje solicitado. Asigna tarifa y distancia simuladas.
-
-**Respuesta 200:**
-```json
-{
-  "data": {
-    "...trip",
-    "status": "accepted",
-    "driverId": "...",
-    "fare": 25000,
-    "distance": 12.5,
-    "acceptedAt": "2024-03-04T10:02:00.000Z"
-  }
-}
-```
-
-**Errores:**
-- `404` — viaje no encontrado
-- `409` — el viaje ya no está disponible
-
----
-
-#### `PATCH /api/trips/:id/status` 🔒
-
-Actualiza el estado de un viaje.
-
-**Body:**
-```json
-{ "status": "on_ride" }
-```
-
-> `status`: `"on_ride"` | `"completed"` | `"cancelled"`
-
-Transiciones automáticas:
-- `on_ride` → añade `startedAt`
-- `completed` → añade `completedAt` + `duration` (simulado)
-
-**Respuesta 200:**
-```json
-{ "data": { ...trip, "status": "on_ride" } }
-```
-
----
-
-### ❤️ Health Check
-
-#### `GET /health`
-
-```json
-{ "status": "ok", "timestamp": "2024-03-04T10:00:00.000Z" }
-```
-
----
-
-## 🗃 Esquema de Base de Datos (SQLite)
-
+#### `users`
 ```sql
--- Usuarios
-CREATE TABLE users (
-  id          TEXT PRIMARY KEY,
-  name        TEXT NOT NULL,
-  email       TEXT UNIQUE NOT NULL,
-  password    TEXT NOT NULL,              -- bcrypt hash
-  role        TEXT NOT NULL CHECK(role IN ('passenger','driver')),
-  phone       TEXT,
-  rating      REAL NOT NULL DEFAULT 5.0,
-  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
-);
+id VARCHAR(255) PK | name VARCHAR(255) | email VARCHAR(255) UNIQUE
+password VARCHAR(255) | role VARCHAR(50) CHECK(passenger|driver)
+phone VARCHAR(255) | rating NUMERIC DEFAULT 5.0 | created_at TIMESTAMP
+```
 
--- Refresh tokens (rotación: uno por sesión)
-CREATE TABLE refresh_tokens (
-  id          TEXT PRIMARY KEY,
-  user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  token       TEXT NOT NULL UNIQUE,
-  expires_at  TEXT NOT NULL,
-  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
-);
+#### `trips`
+```sql
+id VARCHAR(255) PK | passenger_id FK → users | driver_id FK → users (nullable)
+origin_address TEXT | origin_lat NUMERIC | origin_lng NUMERIC
+destination_address TEXT | destination_lat NUMERIC | destination_lng NUMERIC
+status VARCHAR(50) CHECK(requested|accepted|on_ride|completed|cancelled)
+vehicle_type VARCHAR(50) CHECK(standard|comfort|xl)
+fare NUMERIC | distance NUMERIC | duration INTEGER
+requested_at TIMESTAMP | accepted_at TIMESTAMP | started_at TIMESTAMP | completed_at TIMESTAMP
+```
 
--- Viajes
-CREATE TABLE trips (
-  id                  TEXT PRIMARY KEY,
-  passenger_id        TEXT NOT NULL REFERENCES users(id),
-  driver_id           TEXT REFERENCES users(id),
-  origin_address      TEXT NOT NULL,
-  origin_lat          REAL NOT NULL,
-  origin_lng          REAL NOT NULL,
-  destination_address TEXT NOT NULL,
-  destination_lat     REAL NOT NULL,
-  destination_lng     REAL NOT NULL,
-  status              TEXT NOT NULL DEFAULT 'requested'
-                      CHECK(status IN ('requested','accepted','on_ride','completed','cancelled')),
-  vehicle_type        TEXT NOT NULL DEFAULT 'standard'
-                      CHECK(vehicle_type IN ('standard','comfort','xl')),
-  notes               TEXT,
-  fare                REAL,
-  distance            REAL,
-  duration            INTEGER,
-  requested_at        TEXT NOT NULL DEFAULT (datetime('now')),
-  accepted_at         TEXT,
-  started_at          TEXT,
-  completed_at        TEXT
-);
+#### `refresh_tokens`
+```sql
+id VARCHAR(255) PK | user_id FK → users (CASCADE DELETE)
+token TEXT UNIQUE | expires_at TIMESTAMP | created_at TIMESTAMP
 ```
 
 ---
@@ -378,51 +200,77 @@ CREATE TABLE trips (
 
 ```
 src/
-├── db/
-│   └── init.ts        # Conexión SQLite + creación de tablas
+├── config/
+│   ├── database.ts      # DataSource TypeORM (conexión a Supabase/PostgreSQL)
+│   └── swagger.ts       # Especificación OpenAPI
+├── entities/
+│   ├── User.ts          # Entidad usuario con roles
+│   ├── Trip.ts          # Entidad viaje con ciclo de vida
+│   └── RefreshToken.ts  # Entidad token de actualización
+├── migrations/
+│   └── 1717286000000-InitialSchema.ts  # Migración inicial (idempotente)
 ├── middleware/
-│   └── auth.ts        # authenticate, requireRole, errorHandler
+│   └── auth.ts          # authenticate, requireRole, errorHandler
 ├── routes/
-│   ├── auth.ts        # /api/auth/*
-│   └── trips.ts       # /api/trips/*
+│   ├── auth.ts          # /api/auth/*
+│   ├── trips.ts         # /api/trips/* (rutas primarias)
+│   ├── travels.ts       # /api/travels/* (alias académicos)
+│   └── me.ts            # /api/me/travels
 ├── services/
-│   └── jwt.ts         # generateTokens / verifyAccessToken / verifyRefreshToken / revokeRefreshToken
-├── types/
-│   └── index.ts       # User, Trip, AuthTokens (+ Express module augmentation)
-└── index.ts           # Bootstrap Express app
+│   ├── jwt.ts           # generateTokens, verifyAccessToken, verifyRefreshToken
+│   └── socket.ts        # Socket.IO: initSocket, emitters
+├── db/
+│   ├── seed.ts          # Datos de prueba
+│   └── migration-run.ts # Runner de migraciones
+├── logger/
+│   └── index.ts         # Winston logger
+└── index.ts             # Bootstrap de la aplicación
 ```
 
 ---
 
-## 🐳 Docker
+## 🛠 Scripts
 
 ```bash
-# Build
-docker build -t taxigo-api:latest .
-
-# Ejecutar (puerto 8000)
-docker run -p 8000:8000 \
-  -e JWT_ACCESS_SECRET=cambia_esto \
-  -e JWT_REFRESH_SECRET=cambia_esto \
-  taxigo-api:latest
+npm run build           # Compilar TypeScript → dist/
+npm start               # Iniciar servidor compilado
+npm run dev             # Desarrollo con ts-node
+npm run migration:run   # Aplicar migraciones pendientes a la DB
+npm run seed            # Insertar datos de prueba
 ```
 
 ---
 
-## 🧪 Scripts
+## 🐳 Despliegue
 
-```bash
-npm run dev      # ts-node / tsx en modo watch
-npm run build    # tsc → dist/
-npm start        # node dist/index.js
-```
+### Render (recomendado para API con WebSockets)
+> El archivo `render.yaml` está preconfigurado. Solo conecta el repo y configura las variables de entorno marcadas como `sync: false`.
+
+**Variables a configurar en el dashboard de Render:**
+- `DATABASE_URL`: tu Supabase connection string
+- `CORS_ORIGIN`: URL de tu frontend en Vercel (ej. `https://taxigo-web.vercel.app`)
+- `API_URL`: URL de tu servicio en Render
+
+### Vercel (no recomendado para esta API)
+> Vercel no soporta WebSockets de larga duración. Úsalo solo para el frontend (`taxigo-web`).
 
 ---
 
-## 🔒 Notas de Seguridad para Producción
+## 🔒 Seguridad en Producción
 
-1. **Cambiar secrets JWT** — nunca usar los defaults del `.env.example`
-2. **CORS** — establecer `CORS_ORIGIN` solo a los dominios del frontend
-3. **HTTPS** — poner detrás de un proxy (Nginx, Caddy, Vercel Edge, etc.)
-4. **DB** — considerar PostgreSQL/MySQL para producción real (SQLite es para prototipos)
-5. **Rate limiting** — añadir `express-rate-limit` en producción
+1. **JWT Secrets** — cambiar los secrets por valores seguros (mínimo 64 caracteres aleatorios)
+2. **CORS** — configurar `CORS_ORIGIN` exactamente a los dominios del frontend
+3. **HTTPS** — obligatorio en producción; Render y Vercel lo proveen automáticamente
+4. **Rate Limiting** — ya configurado (100 req/15min por IP)
+5. **Helmet** — ya configurado para cabeceras de seguridad HTTP
+6. **Database** — nunca exponer `DATABASE_URL` en el código fuente; usar variables de entorno
+
+---
+
+## 📚 Swagger / OpenAPI
+
+La documentación interactiva está disponible en:
+```
+http://localhost:8000/api/docs
+```
+Puedes probar todos los endpoints directamente desde el navegador.

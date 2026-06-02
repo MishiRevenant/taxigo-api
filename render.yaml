@@ -2,25 +2,24 @@ services:
   - type: web
     name: taxigo-api
     runtime: docker
-    plan: free # Change to 'starter' if using a persistent disk
+    plan: free
+    dockerfilePath: ./Dockerfile
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
         value: 8000
+      - key: DATABASE_URL
+        sync: false   # Set to your Supabase connection string in Render dashboard
       - key: JWT_ACCESS_SECRET
         generateValue: true
       - key: JWT_REFRESH_SECRET
         generateValue: true
-      - key: DB_PATH
-        value: data/taxigo.db
+      - key: JWT_ACCESS_EXPIRES
+        value: 15m
+      - key: JWT_REFRESH_EXPIRES
+        value: 7d
       - key: CORS_ORIGIN
-        sync: false # Set this to your frontend URL (e.g., https://taxigo.vercel.app)
-    
-    # Note: Persistent disks require a paid plan (Starter or higher)
-    # If using Free tier, remove the 'disk' section below. 
-    # Data will reset on every restart without a disk.
-    disk:
-      name: taxigo-data
-      mountPath: /app/data
-      sizeGB: 1
+        sync: false   # Set to your Vercel frontend URL, e.g. https://taxigo-web.vercel.app
+      - key: API_URL
+        sync: false   # Set to your Render service URL for Swagger servers list
