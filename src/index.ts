@@ -18,10 +18,13 @@ import meRouter from './routes/me'
 import { errorHandler } from './middleware/auth'
 
 const app = express()
+app.set('trust proxy', 1) // Trust Vercel/reverse proxy for proper client IP rate limiting
 const PORT = Number(process.env.PORT) || 8000
 
 // ── Security Middleware ────────────────────────────────────────────────────────
-app.use(helmet())
+app.use(helmet({
+    contentSecurityPolicy: false,
+}))
 
 const allowedOrigins = (process.env.CORS_ORIGIN || 'http://localhost:5173').split(',')
 app.use(cors({
@@ -69,6 +72,11 @@ app.use(async (_req, res, next) => {
 // ── Swagger UI ────────────────────────────────────────────────────────────────
 app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
     customSiteTitle: '🚖 TaxiGo API Docs',
+    customCssUrl: 'https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.32.6/swagger-ui.css',
+    customJs: [
+        'https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.32.6/swagger-ui-bundle.js',
+        'https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.32.6/swagger-ui-standalone-preset.js'
+    ],
     swaggerOptions: {
         persistAuthorization: true,
         docExpansion: 'list',
@@ -119,6 +127,8 @@ async function bootstrap() {
     }
 }
 
-bootstrap()
+if (!process.env.VERCEL) {
+    bootstrap()
+}
 
 export default app

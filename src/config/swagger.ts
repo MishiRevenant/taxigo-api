@@ -1,4 +1,5 @@
 import swaggerJsdoc from 'swagger-jsdoc'
+import path from 'path'
 
 const options: swaggerJsdoc.Options = {
     definition: {
@@ -108,7 +109,12 @@ Obtén tu token haciendo \`POST /api/auth/login\`.
             { name: 'Trips', description: 'Gestión del ciclo de vida de los viajes' },
         ],
     },
-    apis: ['./src/routes/*.ts', './dist/routes/*.js'],
+    apis: [
+        path.join(__dirname, '../routes/*.ts'),
+        path.join(__dirname, '../routes/*.js'),
+        './src/routes/*.ts',
+        './dist/routes/*.js'
+    ],
 }
 
 export const swaggerSpec = swaggerJsdoc(options)

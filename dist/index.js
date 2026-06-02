@@ -22,9 +22,12 @@ const travels_1 = __importDefault(require("./routes/travels"));
 const me_1 = __importDefault(require("./routes/me"));
 const auth_2 = require("./middleware/auth");
 const app = (0, express_1.default)();
+app.set('trust proxy', 1); // Trust Vercel/reverse proxy for proper client IP rate limiting
 const PORT = Number(process.env.PORT) || 8000;
 // ── Security Middleware ────────────────────────────────────────────────────────
-app.use((0, helmet_1.default)());
+app.use((0, helmet_1.default)({
+    contentSecurityPolicy: false,
+}));
 const allowedOrigins = (process.env.CORS_ORIGIN || 'http://localhost:5173').split(',');
 app.use((0, cors_1.default)({
     origin: (origin, callback) => {
@@ -48,9 +51,28 @@ app.use((0, express_rate_limit_1.default)({
 app.use(express_1.default.json());
 // Morgan uses Winston under the hood
 app.use((0, morgan_1.default)(process.env.NODE_ENV === 'production' ? 'combined' : 'dev', { stream: { write: (msg) => logger_1.logger.http(msg.trim()) } }));
+// ── Serverless DB Initialization Middleware ────────────────────────────────────
+app.use(async (_req, res, next) => {
+    if (!database_1.AppDataSource.isInitialized) {
+        try {
+            await database_1.AppDataSource.initialize();
+            logger_1.logger.info('✅ TypeORM connected to PostgreSQL via middleware (Serverless)');
+        }
+        catch (error) {
+            logger_1.logger.error('❌ Failed to initialize DB:', error);
+            return res.status(500).json({ message: 'Error conectando a la base de datos' });
+        }
+    }
+    next();
+});
 // ── Swagger UI ────────────────────────────────────────────────────────────────
 app.use('/api/docs', swagger_ui_express_1.default.serve, swagger_ui_express_1.default.setup(swagger_1.swaggerSpec, {
     customSiteTitle: '🚖 TaxiGo API Docs',
+    customCssUrl: 'https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.32.6/swagger-ui.css',
+    customJs: [
+        'https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.32.6/swagger-ui-bundle.js',
+        'https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.32.6/swagger-ui-standalone-preset.js'
+    ],
     swaggerOptions: {
         persistAuthorization: true,
         docExpansion: 'list',
@@ -93,5 +115,7 @@ async function bootstrap() {
         process.exit(1);
     }
 }
-bootstrap();
+if (!process.env.VERCEL) {
+    bootstrap();
+}
 exports.default = app;
