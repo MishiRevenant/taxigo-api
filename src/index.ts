@@ -52,6 +52,20 @@ app.use(morgan(
     { stream: { write: (msg) => logger.http(msg.trim()) } },
 ))
 
+// ── Serverless DB Initialization Middleware ────────────────────────────────────
+app.use(async (_req, res, next) => {
+    if (!AppDataSource.isInitialized) {
+        try {
+            await AppDataSource.initialize()
+            logger.info('✅ TypeORM connected to PostgreSQL via middleware (Serverless)')
+        } catch (error) {
+            logger.error('❌ Failed to initialize DB:', error)
+            return res.status(500).json({ message: 'Error conectando a la base de datos' })
+        }
+    }
+    next()
+})
+
 // ── Swagger UI ────────────────────────────────────────────────────────────────
 app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
     customSiteTitle: '🚖 TaxiGo API Docs',
@@ -66,6 +80,7 @@ app.use('/api/auth', authRouter)
 app.use('/api/trips', tripsRouter)
 app.use('/api/travels', travelsRouter)  // Alias: academic requirement
 app.use('/api/me', meRouter)            // Alias: GET /api/me/travels
+
 
 // ── Health check ───────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => {
