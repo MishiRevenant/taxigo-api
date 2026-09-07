@@ -1,7 +1,7 @@
 {
     "name": "taxigo-api",
     "version": "2.0.0",
-    "description": "TaxiGo REST API – Express + TypeScript + TypeORM + PostgreSQL + JWT + WebSockets",
+    "description": "TaxiGo REST API – Express + TypeScript + TypeORM + MySQL (RDS) + JWT + WebSockets",
     "type": "commonjs",
     "main": "dist/index.js",
     "scripts": {
@@ -22,7 +22,7 @@
         "helmet": "^7.1.0",
         "jsonwebtoken": "^9.0.2",
         "morgan": "^1.10.0",
-        "pg": "^8.20.0",
+        "mysql2": "^3.11.0",
         "reflect-metadata": "^0.2.2",
         "socket.io": "^4.7.5",
         "swagger-jsdoc": "^6.2.8",
@@ -40,7 +40,7 @@
         "@types/jsonwebtoken": "^9.0.6",
         "@types/morgan": "^1.9.9",
         "@types/node": "^20.11.25",
-        "@types/pg": "^8.18.0",
+
         "@types/swagger-jsdoc": "^6.0.4",
         "@types/swagger-ui-express": "^4.1.6",
         "ts-node": "^10.9.2",

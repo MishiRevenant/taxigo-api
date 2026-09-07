@@ -8,7 +8,7 @@ const options: swaggerJsdoc.Options = {
             title: '🚖 TaxiGo API',
             version: '2.0.0',
             description: `
-API de reservas de taxi construida con **Express + TypeScript + TypeORM + PostgreSQL**.
+API de reservas de taxi construida con **Express + TypeScript + TypeORM + MySQL (RDS)**.
 Permite a pasajeros solicitar viajes y a conductores aceptarlos y gestionarlos en tiempo real mediante WebSockets.
 
 ## Autenticación
@@ -30,12 +30,12 @@ Obtén tu token haciendo \`POST /api/auth/login\`.
         },
         servers: [
             {
-                url: process.env.API_URL || 'http://localhost:8000',
+                url: process.env.API_URL || 'http://localhost:8080',
                 description: 'Servidor local de desarrollo',
             },
             {
-                url: 'https://taxigo-api.onrender.com',
-                description: 'Servidor de producción (Render)',
+                url: process.env.EB_API_URL || 'http://taxigo-api.elasticbeanstalk.com',
+                description: 'Servidor de producción (AWS Elastic Beanstalk)',
             },
         ],
         components: {

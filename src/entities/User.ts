@@ -28,7 +28,7 @@ export class User {
     @Column({ type: 'varchar', length: 255, nullable: true })
     phone: string | null
 
-    @Column({ type: 'numeric', default: 5.0 })
+    @Column({ type: 'decimal', precision: 3, scale: 1, default: 5.0 })
     rating: number
 
     @CreateDateColumn({ name: 'created_at' })

@@ -30,19 +30,19 @@ export class Trip {
     @Column({ name: 'origin_address', type: 'text' })
     originAddress: string
 
-    @Column({ name: 'origin_lat', type: 'numeric' })
+    @Column({ name: 'origin_lat', type: 'decimal', precision: 10, scale: 6 })
     originLat: number
 
-    @Column({ name: 'origin_lng', type: 'numeric' })
+    @Column({ name: 'origin_lng', type: 'decimal', precision: 10, scale: 6 })
     originLng: number
 
     @Column({ name: 'destination_address', type: 'text' })
     destinationAddress: string
 
-    @Column({ name: 'destination_lat', type: 'numeric' })
+    @Column({ name: 'destination_lat', type: 'decimal', precision: 10, scale: 6 })
     destinationLat: number
 
-    @Column({ name: 'destination_lng', type: 'numeric' })
+    @Column({ name: 'destination_lng', type: 'decimal', precision: 10, scale: 6 })
     destinationLng: number
 
     @Column({
@@ -65,10 +65,10 @@ export class Trip {
     @Column({ type: 'text', nullable: true })
     notes: string | null
 
-    @Column({ type: 'numeric', nullable: true })
+    @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
     fare: number | null
 
-    @Column({ type: 'numeric', nullable: true })
+    @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
     distance: number | null
 
     @Column({ type: 'integer', nullable: true })

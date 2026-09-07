@@ -18,8 +18,8 @@ import meRouter from './routes/me'
 import { errorHandler } from './middleware/auth'
 
 const app = express()
-app.set('trust proxy', 1) // Trust Vercel/reverse proxy for proper client IP rate limiting
-const PORT = Number(process.env.PORT) || 8000
+app.set('trust proxy', 1) // Trust Elastic Beanstalk / ALB reverse proxy for proper client IP rate limiting
+const PORT = Number(process.env.PORT) || 8080
 
 // ── Security Middleware ────────────────────────────────────────────────────────
 app.use(helmet({
@@ -55,20 +55,6 @@ app.use(morgan(
     { stream: { write: (msg) => logger.http(msg.trim()) } },
 ))
 
-// ── Serverless DB Initialization Middleware ────────────────────────────────────
-app.use(async (_req, res, next) => {
-    if (!AppDataSource.isInitialized) {
-        try {
-            await AppDataSource.initialize()
-            logger.info('✅ TypeORM connected to PostgreSQL via middleware (Serverless)')
-        } catch (error) {
-            logger.error('❌ Failed to initialize DB:', error)
-            return res.status(500).json({ message: 'Error conectando a la base de datos' })
-        }
-    }
-    next()
-})
-
 // ── Swagger UI ────────────────────────────────────────────────────────────────
 app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
     customSiteTitle: '🚖 TaxiGo API Docs',
@@ -89,6 +75,14 @@ app.use('/api/trips', tripsRouter)
 app.use('/api/travels', travelsRouter)  // Alias: academic requirement
 app.use('/api/me', meRouter)            // Alias: GET /api/me/travels
 
+// ── Root endpoint (Elastic Beanstalk health check) ────────────────────────────
+app.get('/', (_req, res) => {
+    res.status(200).json({
+        status: 'ok',
+        service: 'taxigo-api',
+        timestamp: new Date().toISOString(),
+    })
+})
 
 // ── Health check ───────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => {
@@ -111,7 +105,7 @@ app.use(errorHandler)
 async function bootstrap() {
     try {
         await AppDataSource.initialize()
-        logger.info('✅ TypeORM connected to PostgreSQL (Supabase)')
+        logger.info('✅ TypeORM connected to MySQL (RDS)')
 
         const httpServer = createServer(app)
         initSocket(httpServer)
@@ -127,8 +121,6 @@ async function bootstrap() {
     }
 }
 
-if (!process.env.VERCEL) {
-    bootstrap()
-}
+bootstrap()
 
 export default app

@@ -7,11 +7,13 @@ import { RefreshToken } from '../entities/RefreshToken'
 const isProd = process.env.NODE_ENV === 'production'
 
 export const AppDataSource = new DataSource({
-    type: 'postgres',
-    url: process.env.DATABASE_URL,
-    ssl: process.env.DATABASE_URL?.includes('localhost')
-        ? false
-        : { rejectUnauthorized: false },
+    type: 'mysql',
+    host: process.env.DB_HOST || 'localhost',
+    port: Number(process.env.DB_PORT) || 3306,
+    username: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || '',
+    database: process.env.DB_NAME || 'taxigo',
+    charset: 'utf8mb4',
     entities: [User, Trip, RefreshToken],
     // In production, disable synchronize and use migrations
     synchronize: false,

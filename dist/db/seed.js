@@ -12,7 +12,7 @@ const bcryptjs_1 = __importDefault(require("bcryptjs"));
 async function seed() {
     try {
         await database_1.AppDataSource.initialize();
-        console.log('✅ Connected to database');
+        console.log('✅ Connected to MySQL database');
         const userRepo = database_1.AppDataSource.getRepository(User_1.User);
         const tripRepo = database_1.AppDataSource.getRepository(Trip_1.Trip);
         const users = [

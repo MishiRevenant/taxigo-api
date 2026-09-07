@@ -22,8 +22,8 @@ const travels_1 = __importDefault(require("./routes/travels"));
 const me_1 = __importDefault(require("./routes/me"));
 const auth_2 = require("./middleware/auth");
 const app = (0, express_1.default)();
-app.set('trust proxy', 1); // Trust Vercel/reverse proxy for proper client IP rate limiting
-const PORT = Number(process.env.PORT) || 8000;
+app.set('trust proxy', 1); // Trust Elastic Beanstalk / ALB reverse proxy for proper client IP rate limiting
+const PORT = Number(process.env.PORT) || 8080;
 // ── Security Middleware ────────────────────────────────────────────────────────
 app.use((0, helmet_1.default)({
     contentSecurityPolicy: false,
@@ -51,20 +51,6 @@ app.use((0, express_rate_limit_1.default)({
 app.use(express_1.default.json());
 // Morgan uses Winston under the hood
 app.use((0, morgan_1.default)(process.env.NODE_ENV === 'production' ? 'combined' : 'dev', { stream: { write: (msg) => logger_1.logger.http(msg.trim()) } }));
-// ── Serverless DB Initialization Middleware ────────────────────────────────────
-app.use(async (_req, res, next) => {
-    if (!database_1.AppDataSource.isInitialized) {
-        try {
-            await database_1.AppDataSource.initialize();
-            logger_1.logger.info('✅ TypeORM connected to PostgreSQL via middleware (Serverless)');
-        }
-        catch (error) {
-            logger_1.logger.error('❌ Failed to initialize DB:', error);
-            return res.status(500).json({ message: 'Error conectando a la base de datos' });
-        }
-    }
-    next();
-});
 // ── Swagger UI ────────────────────────────────────────────────────────────────
 app.use('/api/docs', swagger_ui_express_1.default.serve, swagger_ui_express_1.default.setup(swagger_1.swaggerSpec, {
     customSiteTitle: '🚖 TaxiGo API Docs',
@@ -83,6 +69,14 @@ app.use('/api/auth', auth_1.default);
 app.use('/api/trips', trips_1.default);
 app.use('/api/travels', travels_1.default); // Alias: academic requirement
 app.use('/api/me', me_1.default); // Alias: GET /api/me/travels
+// ── Root endpoint (Elastic Beanstalk health check) ────────────────────────────
+app.get('/', (_req, res) => {
+    res.status(200).json({
+        status: 'ok',
+        service: 'taxigo-api',
+        timestamp: new Date().toISOString(),
+    });
+});
 // ── Health check ───────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => {
     res.json({
@@ -101,7 +95,7 @@ app.use(auth_2.errorHandler);
 async function bootstrap() {
     try {
         await database_1.AppDataSource.initialize();
-        logger_1.logger.info('✅ TypeORM connected to PostgreSQL (Supabase)');
+        logger_1.logger.info('✅ TypeORM connected to MySQL (RDS)');
         const httpServer = (0, http_1.createServer)(app);
         (0, socket_1.initSocket)(httpServer);
         httpServer.listen(PORT, () => {
@@ -115,7 +109,5 @@ async function bootstrap() {
         process.exit(1);
     }
 }
-if (!process.env.VERCEL) {
-    bootstrap();
-}
+bootstrap();
 exports.default = app;

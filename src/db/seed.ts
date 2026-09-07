@@ -8,7 +8,7 @@ import bcrypt from 'bcryptjs'
 async function seed() {
     try {
         await AppDataSource.initialize()
-        console.log('✅ Connected to database')
+        console.log('✅ Connected to MySQL database')
 
         const userRepo = AppDataSource.getRepository(User)
         const tripRepo = AppDataSource.getRepository(Trip)
