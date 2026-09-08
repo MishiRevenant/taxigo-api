@@ -26,16 +26,21 @@ app.use(helmet({
     contentSecurityPolicy: false,
 }))
 
-const allowedOrigins = (process.env.CORS_ORIGIN || 'http://localhost:5173').split(',')
+const corsOriginEnv = process.env.CORS_ORIGIN || 'http://localhost:5173'
+const allowAll = corsOriginEnv.trim() === '*'
+const allowedOrigins = corsOriginEnv.split(',').map(o => o.trim())
+
 app.use(cors({
     origin: (origin, callback) => {
-        if (!origin || allowedOrigins.includes(origin)) {
-            callback(null, true)
-        } else {
-            callback(new Error(`CORS not allowed: ${origin}`))
-        }
+        // Allow requests with no origin (health checks, curl, server-to-server)
+        if (!origin) return callback(null, true)
+        // Allow all origins when CORS_ORIGIN=*
+        if (allowAll) return callback(null, true)
+        // Check against whitelist
+        if (allowedOrigins.includes(origin)) return callback(null, true)
+        callback(new Error(`CORS not allowed: ${origin}`))
     },
-    credentials: true,
+    credentials: !allowAll, // credentials can't be used with wildcard origin
 }))
 
 // Rate limiting: 100 req per 15 minutes per IP
