@@ -1,3 +1,28 @@
+# 🚖 TaxiGo 
+
+Proyecto final de despliegue de infraestructura en la nube utilizando AWS. Esta aplicación es una personalización del proyecto base TaskFlow, adaptada a un sistema de gestión de viajes (TaxiGo).
+
+## 🏗️ Arquitectura Desplegada
+
+El sistema está construido bajo una arquitectura de microservicios alojada íntegramente en **Amazon Web Services (AWS)**:
+
+*   **Frontend (Vue.js/Vite):** Desplegado en **AWS Amplify Hosting**. Se comunica con el backend mediante peticiones HTTPS seguras.
+*   **Backend (Node.js/Express):** Alojado en **AWS Elastic Beanstalk**. Actúa como API RESTful procesando la lógica de negocio y gestionando WebSockets.
+*   **Base de Datos (MySQL):** Administrada a través de **Amazon RDS**. Protegida mediante Security Groups que restringen el acceso exclusivamente al entorno de Elastic Beanstalk y a la IP local del desarrollador.
+*   **CI/CD (Integración y Despliegue Continuo):** Automatizado con **AWS CodePipeline**. Cualquier *push* a la rama `main` del repositorio del backend desencadena un despliegue automático en Elastic Beanstalk.
+
+## 🔗 Enlaces del Proyecto
+
+*   **Frontend (Amplify):** https://master.d6u4wy55tcy7s.amplifyapp.com/login
+*   **Backend Health Check (Beanstalk):** http://taxigoapi-env.eba-d6pd3pt3.sa-east-1.elasticbeanstalk.com
+*   **Repositorio Frontend:** https://github.com/MishiRevenant/taxigo-web
+*   **Repositorio Backend:** https://github.com/MishiRevenant/taxigo-api
+
+## 🛡️ Seguridad y Buenas Prácticas
+*   Las credenciales de la base de datos y claves JWT están inyectadas directamente en las variables de entorno de AWS Elastic Beanstalk, no existen archivos `.env` expuestos en el código fuente.
+*   El Security Group de RDS rechaza tráfico público (`0.0.0.0/0`).
+
+
 # 🚖 TaxiGo API v2
 
 > Backend REST + WebSockets para la plataforma TaxiGo.  
