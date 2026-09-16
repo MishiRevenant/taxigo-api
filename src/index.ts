@@ -92,7 +92,7 @@ app.get('/', (_req, res) => {
 // ── Health check ───────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => {
     res.json({
-        status: 'si',
+        status: 'prueba-si',
         timestamp: new Date().toISOString(),
         db: AppDataSource.isInitialized ? 'connected' : 'disconnected',
     })
